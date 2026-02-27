@@ -16,9 +16,9 @@ Quick-glance overview and statistics of the inventory.
 A clean, public-facing page where potential buyers can browse available listings. Displays product images, brand, price, and availability.
 
 ## Tech Stack
-**Language**: Typescript
-**Framework**: SvelteKit (fullstack meta framework)
-**Styling**: TailwindCSS, shadcn-svelte
+- **Language**: Typescript
+- **Framework**: SvelteKit (fullstack meta framework)
+- **Styling**: TailwindCSS, shadcn-svelte
 
 ## Roadmap
 - Admin authentication
