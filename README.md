@@ -1,42 +1,29 @@
-# sv
+# Minventory - Lightweight Inventory System for Small Resale Businesses
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A lightweight inventory management system modeled from my nanay's small clothing resale operations. Track each items, manage product status, and give customers a clean page to browse what's available.
 
-## Creating a project
+## Core Modules
+### Inventory Management
+Full CRUD operations for your product catalog — add new items, edit details, and remove listings when needed.
 
-If you're seeing this, you've probably already done this step. Congrats!
+### Product Status Tracking
+Each item carries a status tag to reflect where it is in the sales pipeline. Supported statuses include available, reserved, and sold. Additional metadata like price, brand, and product image are tracked per item.
 
-```sh
-# create a new project
-npx sv create my-app
-```
+### Dashboard
+Quick-glance overview and statistics of the inventory.
 
-To recreate this project with the same configuration:
+### Customer View Page
+A clean, public-facing page where potential buyers can browse available listings. Displays product images, brand, price, and availability.
 
-```sh
-# recreate this project
-npx sv create --template minimal --types ts --add prettier eslint tailwindcss="plugins:none" --install npm .
-```
+## Tech Stack
+**Language**: Typescript
+**Framework**: SvelteKit (fullstack meta framework)
+**Styling**: TailwindCSS, shadcn-svelte
 
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+## Roadmap
+- Admin authentication
+- CRUD operations
+- Image upload
+- Logs
+- Product public viewing
+- File export (CSV/XLS)
