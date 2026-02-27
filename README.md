@@ -1,4 +1,4 @@
-# Minventory - Lightweight Inventory System for Small Resale Businesses
+# Minventory
 
 A lightweight inventory management system modeled from my nanay's small clothing resale operations. Track each items, manage product status, and give customers a clean page to browse what's available.
 
