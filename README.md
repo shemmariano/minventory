@@ -4,7 +4,7 @@ A lightweight inventory management system modeled from my nanay's small clothing
 
 ## Core Modules
 ### Inventory Management
-Full CRUD operations for your product catalog — add new items, edit details, and remove listings when needed.
+Full CRUD operations for each product catalog. Actions include adding new items, editing details, and removing listings when needed.
 
 ### Product Status Tracking
 Each item carries a status tag to reflect where it is in the sales pipeline. Supported statuses include available, reserved, and sold. Additional metadata like price, brand, and product image are tracked per item.
