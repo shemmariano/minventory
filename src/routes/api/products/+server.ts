@@ -4,6 +4,7 @@ import type { RequestHandler } from './$types';
 import { products } from '$lib/server/db/schema';
 import { json } from '@sveltejs/kit';
 import { CreateProductSchema } from '$lib/schemas/product';
+import { z } from 'zod';
 
 // get all or by status
 export const GET: RequestHandler = async ({ url }) => {
@@ -25,7 +26,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (!parsed.success) {
 		return json(
-			{ message: 'Invalid request body', issues: parsed.error.flatten() },
+			{ message: 'Invalid request body', issues: z.treeifyError(parsed.error) },
 			{ status: 400 }
 		);
 	}

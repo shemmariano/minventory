@@ -4,6 +4,7 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { eq } from 'drizzle-orm';
 import { PatchProductSchema, UpdateProductSchema } from '$lib/schemas/product';
+import { z } from 'zod';
 
 export const GET: RequestHandler = async ({ params }) => {
 	const { id } = params;
@@ -35,7 +36,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 	if (!parsed.success) {
 		return json(
-			{ message: 'Invalid request body', issues: parsed.error.flatten() },
+			{ message: 'Invalid request body', issues: z.treeifyError(parsed.error) },
 			{ status: 400 }
 		);
 	}

@@ -47,8 +47,12 @@
 		"vite": "^7.3.1"
 	},
 	"dependencies": {
+		"@lucia-auth/adapter-drizzle": "^1.1.0",
 		"@neondatabase/serverless": "^1.0.2",
+		"@node-rs/argon2": "^2.0.2",
+		"@oslojs/encoding": "^1.1.0",
 		"drizzle-orm": "^0.45.1",
+		"lucia": "^3.2.2",
 		"mode-watcher": "^1.1.0",
 		"zod": "^4.3.6"
 	}
