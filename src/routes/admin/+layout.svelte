@@ -7,8 +7,12 @@
 
 <SidebarProvider>
 	<AppSidebar />
+	<header class="h-12 w-full border-b">
+		<div class="flex aspect-square h-full items-center justify-center border-r">
+			<SidebarTrigger class="h-full w-full rounded-none" />
+		</div>
+	</header>
 	<main>
-		<SidebarTrigger />
 		{@render children?.()}
 	</main>
 </SidebarProvider>

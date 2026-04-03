@@ -19,7 +19,11 @@ export const GET: RequestHandler = async ({ params }) => {
 	return json(product);
 };
 
-export const PUT: RequestHandler = async ({ params, request }) => {
+export const PUT: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) {
+		return error(401, 'Unauthorized');
+	}
+
 	const { id } = params;
 
 	const existing = await db
@@ -59,7 +63,11 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	return json(updated);
 };
 
-export const PATCH: RequestHandler = async ({ params, request }) => {
+export const PATCH: RequestHandler = async ({ params, request, locals }) => {
+	if (!locals.user) {
+		return error(401, 'Unauthorized');
+	}
+
 	const { id } = params;
 
 	const existing = await db
@@ -96,7 +104,11 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	return json(updated);
 };
 
-export const DELETE: RequestHandler = async ({ params }) => {
+export const DELETE: RequestHandler = async ({ params, locals }) => {
+	if (!locals.user) {
+		return error(401, 'Unauthorized');
+	}
+
 	const { id } = params;
 
 	const existing = await db

@@ -5,6 +5,7 @@
 	import { Button } from '../ui/button';
 	import { goto } from '$app/navigation';
 	import { Spinner } from '../ui/spinner';
+	import LogoBrand from './LogoBrand.svelte';
 
 	let openLogOutModal = $state(false);
 	let logOutError = $state(false);
@@ -32,9 +33,17 @@
 </script>
 
 <Root>
-	<Header>
+	<Header class="h-12 border-b">
 		<Menu>
-			<MenuItem>Minventory</MenuItem>
+			<MenuItem class="flex items-center gap-2">
+				<MenuButton>
+					<LogoBrand
+						width="16"
+						height="16"
+						textColor="hover:text-secondary-foreground dark:hover:text-secondary-foreground"
+					/> Minventory
+				</MenuButton>
+			</MenuItem>
 		</Menu>
 	</Header>
 	<Content>
