@@ -1,61 +1,90 @@
 <script lang="ts">
-	import CalendarIcon from '@lucide/svelte/icons/calendar';
-	import HouseIcon from '@lucide/svelte/icons/house';
-	import InboxIcon from '@lucide/svelte/icons/inbox';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import { Root, Header, Content, Group, Footer, Menu, MenuItem, MenuButton } from '../ui/sidebar';
+	import { Dialog, DialogContent, DialogFooter } from '../ui/dialog';
+	import { LogOut } from '@lucide/svelte';
+	import { Button } from '../ui/button';
+	import { goto } from '$app/navigation';
+	import { Spinner } from '../ui/spinner';
 
-	// Menu items.
-	const items = [
-		{
-			title: 'Home',
-			url: '#',
-			icon: HouseIcon
-		},
-		{
-			title: 'Inbox',
-			url: '#',
-			icon: InboxIcon
-		},
-		{
-			title: 'Calendar',
-			url: '#',
-			icon: CalendarIcon
-		},
-		{
-			title: 'Search',
-			url: '#',
-			icon: SearchIcon
-		},
-		{
-			title: 'Settings',
-			url: '#',
-			icon: SettingsIcon
+	let openLogOutModal = $state(false);
+	let logOutError = $state(false);
+	let logOutLoading = $state(false);
+
+	async function signOut() {
+		logOutLoading = true;
+		logOutError = false;
+		const res = await fetch('/api/auth/logout', { method: 'POST' });
+
+		if (!res.ok) {
+			logOutLoading = false;
+			logOutError = true;
+			return;
 		}
-	];
+		logOutLoading = false;
+		goto('/login');
+	}
+
+	function closeSignOutModal() {
+		openLogOutModal = false;
+		logOutError = false;
+		logOutLoading = false;
+	}
 </script>
 
-<Sidebar.Root>
-	<Sidebar.Content>
-		<Sidebar.Group>
-			<Sidebar.GroupLabel>Application</Sidebar.GroupLabel>
-			<Sidebar.GroupContent>
-				<Sidebar.Menu>
-					{#each items as item (item.title)}
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton>
-								{#snippet child({ props })}
-									<a href={item.url} {...props}>
-										<item.icon />
-										<span>{item.title}</span>
-									</a>
-								{/snippet}
-							</Sidebar.MenuButton>
-						</Sidebar.MenuItem>
-					{/each}
-				</Sidebar.Menu>
-			</Sidebar.GroupContent>
-		</Sidebar.Group>
-	</Sidebar.Content>
-</Sidebar.Root>
+<Root>
+	<Header>
+		<Menu>
+			<MenuItem>Minventory</MenuItem>
+		</Menu>
+	</Header>
+	<Content>
+		<Group>
+			<Menu>
+				<MenuItem>
+					<MenuButton>Dashboard</MenuButton>
+				</MenuItem>
+				<MenuItem>
+					<MenuButton>Products</MenuButton>
+				</MenuItem>
+			</Menu>
+		</Group>
+	</Content>
+	<Footer>
+		{@render footer()}
+	</Footer>
+</Root>
+
+{#snippet footer()}
+	<Group>
+		<Menu>
+			<MenuItem>
+				<MenuButton onclick={() => (openLogOutModal = true)}>
+					Logout
+					<LogOut class="ml-auto" />
+				</MenuButton>
+			</MenuItem>
+		</Menu>
+	</Group>
+{/snippet}
+
+<Dialog bind:open={openLogOutModal}>
+	<DialogContent onInteractOutside={(e) => e.preventDefault()} showCloseButton={false}>
+		<h2 class="prose dark:prose-invert">Confirm sign out.</h2>
+		{#if logOutError}
+			<span class="text-destructive dark:text-destructive"
+				>Something went wrong while logging out. Please try again.</span
+			>
+		{/if}
+		<DialogFooter>
+			<Button disabled={logOutLoading} variant="ghost" onclick={closeSignOutModal}>Cancel</Button>
+			<Button disabled={logOutLoading} variant="destructive" onclick={signOut}>
+				{#if logOutLoading}
+					<Spinner />
+					Signing out
+				{:else}
+					Sign out
+				{/if}
+			</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>

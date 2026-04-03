@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-
+	import { Label } from '$lib/components/ui/label';
+	import { Input } from '$lib/components/ui/input';
+	import { Button } from '$lib/components/ui/button';
+	import { Spinner } from '$lib/components/ui/spinner';
 	let { form } = $props();
 
 	let loading = $state<boolean>(false);
@@ -25,16 +28,16 @@
 	>
 		<div class="flex flex-col gap-4">
 			<span>
-				<label for="username" class="pb-2"
-					>Username <span class="text-destructive dark:text-destructive">*</span></label
+				<Label for="username" class="pb-2"
+					>Username <span class="text-destructive dark:text-destructive">*</span></Label
 				>
-				<input id="username" type="text" name="username" placeholder="Enter username" required />
+				<Input id="username" type="text" name="username" placeholder="Enter username" required />
 			</span>
 			<span>
-				<label for="password" class="pb-2"
-					>Password <span class="text-destructive dark:text-destructive">*</span></label
+				<Label for="password" class="pb-2"
+					>Password <span class="text-destructive dark:text-destructive">*</span></Label
 				>
-				<input
+				<Input
 					id="password"
 					type="password"
 					name="password"
@@ -46,15 +49,16 @@
 
 		<div class="flex flex-col gap-3">
 			{#if form?.message}
-				<span class="text-destructive dark:text-destructive text-center">{form.message}</span>
+				<span class="text-center text-destructive dark:text-destructive">{form.message}</span>
 			{/if}
-			<button disabled={loading} type="submit">
+			<Button disabled={loading} type="submit">
 				{#if loading}
+					<Spinner />
 					Logging in
 				{:else}
 					Login
 				{/if}
-			</button>
+			</Button>
 		</div>
 	</form>
 	<span class="prose dark:prose-invert"
