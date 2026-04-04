@@ -6,6 +6,25 @@
 	import { goto } from '$app/navigation';
 	import { Spinner } from '../ui/spinner';
 	import LogoBrand from './LogoBrand.svelte';
+	import { page } from '$app/state';
+
+	type AdminRoutes = {
+		label: string;
+		href: string;
+	};
+
+	const currentPage = $derived(page.url.pathname);
+
+	const routes: AdminRoutes[] = [
+		{
+			label: 'Dashboard',
+			href: '/admin/dashboard'
+		},
+		{
+			label: 'Products',
+			href: '/admin/products'
+		}
+	];
 
 	let openLogOutModal = $state(false);
 	let logOutError = $state(false);
@@ -49,12 +68,13 @@
 	<Content>
 		<Group>
 			<Menu>
-				<MenuItem>
-					<MenuButton>Dashboard</MenuButton>
-				</MenuItem>
-				<MenuItem>
-					<MenuButton>Products</MenuButton>
-				</MenuItem>
+				{#each routes as route (route.href)}
+					<MenuItem>
+						<MenuButton isActive={currentPage === route.href} onclick={() => goto(route.href)}
+							>{route.label}</MenuButton
+						>
+					</MenuItem>
+				{/each}
 			</Menu>
 		</Group>
 	</Content>
@@ -77,7 +97,14 @@
 {/snippet}
 
 <Dialog bind:open={openLogOutModal}>
-	<DialogContent onInteractOutside={(e) => e.preventDefault()} showCloseButton={false}>
+	<DialogContent
+		onInteractOutside={(e) => {
+			if (logOutLoading) {
+				e.preventDefault();
+			}
+		}}
+		showCloseButton={false}
+	>
 		<h2 class="prose dark:prose-invert">Confirm sign out.</h2>
 		{#if logOutError}
 			<span class="text-destructive dark:text-destructive"

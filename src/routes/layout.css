@@ -102,8 +102,8 @@
 }
 
 @theme inline {
-	/* --font-sans: 'Inter Variable', sans-serif; */
-	--font-sans: 'IBM Plex Sans Variable', sans-serif;
+	--font-sans: 'Inter Variable', sans-serif;
+	/* --font-sans: 'IBM Plex Sans Variable', sans-serif; */
 
 	--color-sidebar-ring: var(--sidebar-ring);
 

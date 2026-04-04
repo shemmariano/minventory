@@ -83,7 +83,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals }) => {
 
 	if (!parsed.success) {
 		return json(
-			{ message: 'Invalid request body', issues: parsed.error.flatten() },
+			{ message: 'Invalid request body', issues: z.treeifyError(parsed.error) },
 			{ status: 400 }
 		);
 	}
