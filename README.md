@@ -18,9 +18,3 @@ Quick-glance overview and statistics of the inventory.
 - **Framework**: SvelteKit (fullstack meta framework)
 - **Styling**: TailwindCSS, shadcn-svelte
 - **Database**: PostgreSQL (Neon) via Drizzle ORM
-
-## Roadmap
-- [x] Admin authentication
-- [x] CRUD operations
-- [ ] Dashboard statistics
-- [ ] Data export (CSV/XLS)
