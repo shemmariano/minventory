@@ -1,6 +1,6 @@
 # Minventory
 
-A lightweight, internal inventory management system modeled from my nanay's small clothing resale operations. Track items, manage product status, and keep everything organized behind a simple login.
+A lightweight, internal inventory management system modeled from a small clothing resale operations. Track items, manage product status, and keep everything organized behind a simple login.
 
 ## Core Modules
 
