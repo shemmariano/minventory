@@ -46,14 +46,14 @@
 </script>
 
 <Drawer direction="right" bind:open>
-	<DrawerContent>
+	<DrawerContent class="overflow-y-auto overflow-x-hidden">
 		<DrawerClose class="absolute top-4 right-4">
 			{#snippet child({ props })}
 				<Button {...props} variant="secondary"><X /></Button>
 			{/snippet}
 		</DrawerClose>
 
-		<form class="p-6">
+		<form class="p-6 ">
 			<FieldSet>
 				<FieldLegend>Add New Product</FieldLegend>
 				<FieldDescription>Fill out all required fields before saving.</FieldDescription>

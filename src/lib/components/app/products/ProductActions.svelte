@@ -44,7 +44,7 @@
 		const res = await fetch(`/api/products/${id}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(updated)
+			body: JSON.stringify(body)
 		});
 
 		if (!res.ok) {

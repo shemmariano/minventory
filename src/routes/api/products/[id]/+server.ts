@@ -23,9 +23,12 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 
 	const body = await request.json().catch(() => null);
 
+	console.log(body)
+
 	const parsed = UpdateProductSchema.safeParse(body);
 
 	if (!parsed.success) {
+		console.log(z.treeifyError(parsed.error));
 		return json(
 			{ message: 'Invalid request body', issues: z.treeifyError(parsed.error) },
 			{ status: 400 }

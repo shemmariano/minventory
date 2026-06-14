@@ -23,6 +23,10 @@
 		{
 			label: 'Products',
 			href: '/admin/products'
+		},
+		{
+			label: 'Report',
+			href: '/admin/report'
 		}
 	];
 
