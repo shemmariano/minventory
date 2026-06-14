@@ -1,4 +1,4 @@
-# Phase 3 — Authentication with Lucia
+# Phase 3 — Authentication
 
 Phase 3 adds user authentication to protect your admin routes. By the end, you'll have
 login/logout working and protected API routes that only authenticated users can access.
@@ -10,106 +10,87 @@ login/logout working and protected API routes that only authenticated users can 
 Authentication in SvelteKit has three layers:
 
 ```
-1. Database layer    — users table (credentials) + sessions table (active logins)
-2. Server layer      — Lucia validates cookies against sessions table
-3. Route layer       — hooks check for valid session before allowing access
+1. Database layer    — users table (credentials + hashed password)
+2. Server layer      — HMAC-signed cookie validates the user on each request
+3. Route layer       — hooks check for valid user before allowing access
 ```
 
 When someone logs in:
 
 - Their password is verified against the hashed password in `users`
-- A new row is created in `sessions` with a random ID
-- That ID is sent to the browser as a cookie
-- On every request, Lucia checks the cookie against the `sessions` table
+- An HMAC-signed token is created containing the user ID
+- That token is sent to the browser as an HTTP-only cookie
+- On every request, the server verifies the cookie signature and looks up the user
 
 When someone logs out:
 
-- The session row is deleted from the database
 - The cookie is cleared from the browser
+- No server state to clean up — cookie-based, no sessions table
 
 ---
 
 ## Step 1 — Install dependencies
 
+The only auth dependency you need is already installed:
+
 ```bash
-npm install lucia @node-rs/argon2 @oslojs/encoding
+# Already present in the project:
+npm install @node-rs/argon2
 ```
 
-**What each package does:**
+**What it does:**
 
-- `lucia` — the auth library. Handles sessions, cookies, and validation
-- `@node-rs/argon2` — Argon2id password hashing via native bindings. Fast, secure, and recommended by Lucia v3 for Node.js
-- `@oslojs/encoding` — utilities for encoding/decoding session data
+- `@node-rs/argon2` — Argon2id password hashing via native bindings. Fast and secure.
+
+**What we DON'T need (removed from the original plan):**
+
+- `lucia` — not needed; we manage cookies directly with SvelteKit's built-in `cookies` API
+- `@oslojs/encoding` — not needed; our approach uses simple HMAC + hex
+- `@lucia-auth/adapter-drizzle` — not needed; no sessions table
+
+We also **remove the `sessions` table** from the database. Every login creates a
+cookie; no server-side session storage is required.
 
 ---
 
-## Step 2 — Create Lucia initialization file
+## Step 2 — Create the auth module
 
 Create `src/lib/server/auth.ts`:
 
 ```ts
-import { Lucia } from 'lucia';
-import { dev } from '$app/environment';
-import { db } from './db';
-import { sessions, users } from './db/schema';
-import { DrizzlePostgreSQLAdapter } from '@lucia-auth/adapter-drizzle';
-
-// Create the Drizzle adapter — connects Lucia to your database
-const adapter = new DrizzlePostgreSQLAdapter(db, sessions, users);
-
-// Initialize Lucia with your adapter and configuration
-export const lucia = new Lucia(adapter, {
-	sessionCookie: {
-		attributes: {
-			// secure: true in production, false in dev (no HTTPS locally)
-			secure: !dev
-		}
-	},
-	getUserAttributes: (attributes) => {
-		// Expose these fields from the user table to the session
-		return {
-			username: attributes.username
-		};
-	}
-});
-
-// Type declarations for Lucia
-// This tells TypeScript what your auth types look like
-declare module 'lucia' {
-	interface Register {
-		Lucia: typeof lucia;
-		DatabaseUserAttributes: {
-			username: string;
-		};
-	}
-}
-```
-
-**Why do we need `getUserAttributes`?**
-Lucia only stores the user ID in the session by default. If you want to access
-the username (or any other user field) without an extra DB query, you declare
-it here. Then you can use `session.user.username` directly.
-
----
-
-## Step 3 — Create auth helper functions
-
-Add to `src/lib/server/auth.ts`:
-
-```ts
-import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 import { hash, verify } from '@node-rs/argon2';
-import { generateIdFromEntropySize } from 'lucia';
+import { createHmac } from 'node:crypto';
 import { db } from './db';
 import { users } from './db/schema';
 import { eq } from 'drizzle-orm';
+import { error, type RequestEvent } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
+
+const COOKIE_NAME = 'auth_token';
+
+function getSecret(): string {
+	return env.AUTH_SECRET || 'dev-secret-change-in-production';
+}
+
+function signToken(userId: string): string {
+	const secret = getSecret();
+	const sig = createHmac('sha256', secret).update(userId).digest('hex');
+	return `${userId}.${sig}`;
+}
+
+function verifyToken(token: string): string | null {
+	const [userId, sig] = token.split('.');
+	if (!userId || !sig) return null;
+	const secret = getSecret();
+	const expected = createHmac('sha256', secret).update(userId).digest('hex');
+	return sig === expected ? userId : null;
+}
 
 /**
  * Create a new user with a hashed password.
  * Returns the user ID on success.
  */
 export async function createUser(username: string, password: string): Promise<string> {
-	// Check if username already exists
 	const existing = await db
 		.select()
 		.from(users)
@@ -119,7 +100,6 @@ export async function createUser(username: string, password: string): Promise<st
 		throw new Error('Username already taken');
 	}
 
-	// Hash the password with Argon2id
 	const passwordHash = await hash(password, {
 		memoryCost: 19456,
 		timeCost: 2,
@@ -127,10 +107,8 @@ export async function createUser(username: string, password: string): Promise<st
 		parallelism: 1
 	});
 
-	// Generate a random user ID (Lucia recommends 15+ bytes)
-	const userId = generateIdFromEntropySize(15);
+	const userId = crypto.randomUUID();
 
-	// Insert the new user
 	await db.insert(users).values({
 		id: userId,
 		username,
@@ -167,34 +145,42 @@ export async function validateCredentials(
 }
 
 /**
- * Create a session and set the session cookie.
+ * Create a session token and set it as a cookie.
  * Call this after successful login.
  */
 export async function createSession(event: RequestEvent, userId: string): Promise<void> {
-	const session = await lucia.createSession(userId, {});
-	const sessionCookie = lucia.createSessionCookie(session.id);
-
-	event.cookies.set(sessionCookie.name, sessionCookie.value, {
-		path: '.',
-		...sessionCookie.attributes
+	const token = signToken(userId);
+	event.cookies.set(COOKIE_NAME, token, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure: !event.url.protocol.includes('http:') && event.url.hostname !== 'localhost',
+		maxAge: 60 * 60 * 24 * 7 // 7 days
 	});
 }
 
 /**
- * Invalidate the session and clear the cookie.
+ * Invalidate the session by clearing the cookie.
  * Call this on logout.
  */
 export async function invalidateSession(event: RequestEvent): Promise<void> {
-	const sessionId = event.locals.session?.id;
-	if (sessionId) {
-		await lucia.invalidateSession(sessionId);
-	}
+	event.cookies.delete(COOKIE_NAME, { path: '/' });
+}
 
-	const blankCookie = lucia.createBlankSessionCookie();
-	event.cookies.set(blankCookie.name, blankCookie.value, {
-		path: '.',
-		...blankCookie.attributes
-	});
+/**
+ * Resolve the current user from the cookie, or null if not authenticated.
+ */
+export async function getUserFromSession(event: RequestEvent) {
+	const token = event.cookies.get(COOKIE_NAME);
+	if (!token) return null;
+	const userId = verifyToken(token);
+	if (!userId) return null;
+	const user = await db
+		.select()
+		.from(users)
+		.where(eq(users.id, userId))
+		.then((rows) => rows[0]);
+	return user ? { id: user.id, username: user.username } : null;
 }
 
 /**
@@ -208,72 +194,53 @@ export function requireAuth(event: RequestEvent): void {
 }
 ```
 
+**Why HMAC instead of sessions table?**
+
+Traditional auth stores session rows in the database — every request hits the DB
+to check if the session is valid. HMAC-signed cookies eliminate the DB lookup
+for session validation. The server signs the user ID with a secret key; if the
+signature matches, the token is authentic. This is simpler and faster for a
+single-admin tool.
+
+**Why is there still a DB query in `getUserFromSession`?**
+
+We still query the `users` table to get the username. This is a single-row
+lookup by primary key — it's fast and the data fits in Postgres's cache. We
+could embed the username in the token, but that would prevent us from revoking
+access if the user is deleted.
+
 ---
 
-## Step 4 — Create the auth hooks
+## Step 3 — Create the auth hooks
 
-Hooks run on every request and are the entry point for session validation.
+Hooks run on every request and resolve the current user from the cookie.
 
 Create `src/hooks.server.ts`:
 
 ```ts
 import type { Handle } from '@sveltejs/kit';
-import { lucia } from '$lib/server/auth';
+import { getUserFromSession } from '$lib/server/auth';
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// 1. Get the session ID from the cookie
-	const sessionId = event.cookies.get(lucia.sessionCookieName);
-
-	// 2. If no session cookie, set null and continue
-	if (!sessionId) {
-		event.locals.user = null;
-		event.locals.session = null;
-		return resolve(event);
-	}
-
-	// 3. Validate the session with Lucia
-	const { session, user } = await lucia.validateSession(sessionId);
-
-	// 4. If session is valid but was rotated, update the cookie
-	if (session && session.fresh) {
-		const sessionCookie = lucia.createSessionCookie(session.id);
-		event.cookies.set(sessionCookie.name, sessionCookie.value, {
-			path: '.',
-			...sessionCookie.attributes
-		});
-	}
-
-	// 5. If session is invalid, clear the cookie
-	if (!session) {
-		const blankCookie = lucia.createBlankSessionCookie();
-		event.cookies.set(blankCookie.name, blankCookie.value, {
-			path: '.',
-			...blankCookie.attributes
-		});
-	}
-
-	// 6. Attach to locals so routes can access them
-	event.locals.user = user;
-	event.locals.session = session;
-
+	event.locals.user = await getUserFromSession(event);
 	return resolve(event);
 };
 ```
 
 **What is `event.locals`?**
+
 It's a SvelteKit object that holds data for the duration of a request.
 Anything you put here is available in all server routes, form actions, and
 load functions during that request.
 
-**Why check `session.fresh`?**
-Lucia periodically rotates session IDs to prevent session fixation attacks.
-When this happens, you need to send the new session ID back to the browser.
+Compare this to the Lucia version: no session rotation, no blank cookies, no
+Lucia adapter. Just one function call.
 
 ---
 
-## Step 5 — Add types for locals
+## Step 4 — Add types for locals
 
-Update `src/app.d.ts` to include the user and session types:
+Update `src/app.d.ts` to include the user type:
 
 ```ts
 // See https://svelte.dev/docs/kit/types#app.d.ts
@@ -282,12 +249,37 @@ declare global {
 	namespace App {
 		interface Locals {
 			user: { id: string; username: string } | null;
-			session: { id: string; userId: string; expiresAt: Date } | null;
 		}
 	}
 }
 
 export {};
+```
+
+Note: we removed the `session` field from Locals since we no longer track
+sessions server-side.
+
+---
+
+## Step 5 — Update the database schema
+
+Remove the `sessions` table from `src/lib/server/db/schema.ts`. The `users`
+table stays but `id` can now use Postgres-native `uuid`:
+
+```ts
+export const users = pgTable('users', {
+	id: uuid('id').defaultRandom().primaryKey(),
+	username: text('username').notNull().unique(),
+	passwordHash: text('password_hash').notNull(),
+	createdAt: timestamp('created_at').notNull().defaultNow()
+});
+```
+
+Run a migration to drop the sessions table:
+
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
 ```
 
 ---
@@ -322,13 +314,11 @@ export const POST: RequestHandler = async (event) => {
 
 	const { username, password } = parsed.data;
 
-	// Validate credentials
 	const userId = await validateCredentials(username, password);
 	if (!userId) {
 		return json({ message: 'Invalid username or password' }, { status: 401 });
 	}
 
-	// Create session and set cookie via auth helper
 	await createSession(event, userId);
 
 	return json({ success: true, username });
@@ -350,148 +340,127 @@ export const POST: RequestHandler = async (event) => {
 };
 ```
 
-### 6c — POST /api/auth/register (for initial setup)
-
-Create `src/routes/api/auth/register/+server.ts`:
-
-```ts
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { createUser } from '$lib/server/auth';
-import { z } from 'zod';
-
-const RegisterSchema = z.object({
-	username: z.string().min(3, 'Username must be at least 3 characters').max(50),
-	password: z.string().min(8, 'Password must be at least 8 characters')
-});
-
-export const POST: RequestHandler = async ({ request }) => {
-	const body = await request.json().catch(() => null);
-	const parsed = RegisterSchema.safeParse(body);
-
-	if (!parsed.success) {
-		return json(
-			{ message: 'Invalid request body', issues: parsed.error.flatten() },
-			{ status: 400 }
-		);
-	}
-
-	try {
-		const userId = await createUser(parsed.data.username, parsed.data.password);
-		return json({ success: true, userId }, { status: 201 });
-	} catch (e) {
-		const message = e instanceof Error ? e.message : 'Unknown error';
-		return json({ message }, { status: 400 });
-	}
-};
-```
-
-**Important:** The register endpoint is for initial setup only. In production,
-you might want to disable it after creating your admin account or protect it
-with an invite code.
-
 ---
 
 ## Step 7 — Create the login page
 
-### 7a — Create login route
+### 7a — Login form action (handles both form POST and API login)
+
+Create `src/routes/login/+page.server.ts`:
+
+```ts
+import { createSession, validateCredentials } from '$lib/server/auth';
+import { fail, redirect, type Actions } from '@sveltejs/kit';
+import { z } from 'zod';
+
+const LoginSchema = z.object({
+	username: z.string().min(1, 'Username is required'),
+	password: z.string().min(1, 'Password is required')
+});
+
+export const actions: Actions = {
+	default: async (event) => {
+		const formData = await event.request.formData();
+		const parsed = LoginSchema.safeParse({
+			username: formData.get('username'),
+			password: formData.get('password')
+		});
+
+		if (!parsed.success) {
+			return fail(400, { message: 'Invalid input' });
+		}
+
+		const { username, password } = parsed.data;
+		const userId = await validateCredentials(username, password);
+
+		if (!userId) {
+			return fail(401, { message: 'Invalid username or password' });
+		}
+
+		await createSession(event, userId);
+
+		throw redirect(303, '/admin');
+	}
+};
+```
+
+### 7b — Create login page
 
 Create `src/routes/login/+page.svelte`:
 
 ```svelte
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import { enhance } from '$app/forms';
 	import { Label } from '$lib/components/ui/label';
+	import { Input } from '$lib/components/ui/input';
+	import { Button } from '$lib/components/ui/button';
+	import { Spinner } from '$lib/components/ui/spinner';
+	import LogoBrand from '$lib/components/app/LogoBrand.svelte';
+	let { form } = $props();
 
-	let username = '';
-	let password = '';
-	let error = '';
-	let loading = false;
-
-	async function handleSubmit() {
-		error = '';
-		loading = true;
-
-		try {
-			const res = await fetch('/api/auth/login', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ username, password })
-			});
-
-			const data = await res.json();
-
-			if (!res.ok) {
-				error = data.message || 'Login failed';
-				return;
-			}
-
-			// Redirect to admin dashboard on success
-			goto('/admin');
-		} catch (e) {
-			error = 'Network error. Please try again.';
-		} finally {
-			loading = false;
-		}
-	}
+	let loading = $state<boolean>(false);
 </script>
 
-<div class="flex min-h-screen items-center justify-center">
-	<div class="w-full max-w-md space-y-6 rounded-lg border bg-card p-8 shadow-lg">
-		<div class="text-center">
-			<h1 class="text-2xl font-bold">Admin Login</h1>
-			<p class="mt-2 text-muted-foreground">Sign in to manage inventory</p>
-		</div>
-
-		<form on:submit|preventDefault={handleSubmit} class="space-y-4">
-			<div class="space-y-2">
-				<Label for="username">Username</Label>
-				<Input
-					id="username"
-					type="text"
-					bind:value={username}
-					placeholder="Enter your username"
-					required
-				/>
-			</div>
-
-			<div class="space-y-2">
-				<Label for="password">Password</Label>
+<div class="flex h-screen w-full flex-col items-center justify-center gap-8">
+	<LogoBrand width="48" height="48" textColor="text-primary dark:text-primary" />
+	<form
+		method="POST"
+		action=""
+		use:enhance={() => {
+			loading = true;
+			return async ({ update }) => {
+				await update();
+				loading = false;
+			};
+		}}
+		class="flex h-fit w-80 flex-col gap-8 p-4 *:w-full"
+	>
+		<div class="flex flex-col gap-4">
+			<span>
+				<Label for="username" class="pb-2"
+					>Username <span class="text-destructive dark:text-destructive">*</span></Label
+				>
+				<Input id="username" type="text" name="username" placeholder="Enter username" required />
+			</span>
+			<span>
+				<Label for="password" class="pb-2"
+					>Password <span class="text-destructive dark:text-destructive">*</span></Label
+				>
 				<Input
 					id="password"
 					type="password"
-					bind:value={password}
-					placeholder="Enter your password"
+					name="password"
+					placeholder="Enter password"
 					required
 				/>
-			</div>
+			</span>
+		</div>
 
-			{#if error}
-				<div class="rounded bg-destructive/10 p-3 text-sm text-destructive">
-					{error}
-				</div>
+		<div class="flex flex-col gap-3">
+			{#if form?.message}
+				<span class="text-center text-destructive dark:text-destructive">{form.message}</span>
 			{/if}
-
-			<Button type="submit" class="w-full" disabled={loading}>
-				{loading ? 'Signing in...' : 'Sign In'}
+			<Button disabled={loading} type="submit">
+				{#if loading}
+					<Spinner />
+					Logging in
+				{:else}
+					Login
+				{/if}
 			</Button>
-		</form>
-	</div>
+		</div>
+	</form>
 </div>
 ```
 
-### 7b — Create admin layout with auth check
+### 7c — Create admin layout with auth check
 
 Create `src/routes/admin/+layout.server.ts`:
 
 ```ts
 import { redirect } from '@sveltejs/kit';
-import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ locals }) => {
-	// If not logged in, redirect to login page
+export const load = async ({ locals }) => {
 	if (!locals.user) {
 		throw redirect(302, '/login');
 	}
@@ -506,34 +475,31 @@ Create `src/routes/admin/+layout.svelte`:
 
 ```svelte
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { Button } from '$lib/components/ui/button';
+	import { SidebarInset, SidebarProvider, SidebarTrigger } from '$lib/components/ui/sidebar';
+	import AppSidebar from '$lib/components/app/AppSidebar.svelte';
+	import DarkMode from '$lib/components/app/DarkMode.svelte';
+	import { Toaster } from '$lib/components/ui/sonner';
 
-	export let data;
-
-	async function logout() {
-		await fetch('/api/auth/logout', { method: 'POST' });
-		goto('/login');
-	}
+	let { children } = $props();
 </script>
 
-<div class="min-h-screen">
-	<header class="border-b bg-card">
-		<div class="container mx-auto flex h-16 items-center justify-between px-4">
-			<div class="text-lg font-bold">Inventory Admin</div>
-			<div class="flex items-center gap-4">
-				<span class="text-sm text-muted-foreground">
-					Logged in as {data.user.username}
-				</span>
-				<Button variant="outline" size="sm" on:click={logout}>Logout</Button>
+<Toaster position="top-center" />
+<SidebarProvider>
+	<AppSidebar />
+	<SidebarInset>
+		<header class="flex h-12 w-full border-b">
+			<div class="flex aspect-square h-full items-center justify-center border-r">
+				<SidebarTrigger class="h-full w-full rounded-none" />
 			</div>
-		</div>
-	</header>
-
-	<main class="container mx-auto px-4 py-8">
-		<slot />
-	</main>
-</div>
+			<div class="justify-centers ms-auto flex aspect-square h-full items-center">
+				<DarkMode />
+			</div>
+		</header>
+		<main class="p-4">
+			{@render children?.()}
+		</main>
+	</SidebarInset>
+</SidebarProvider>
 ```
 
 Create `src/routes/admin/+page.svelte`:
@@ -566,22 +532,30 @@ Create `src/routes/admin/+page.svelte`:
 Update `src/routes/api/products/+server.ts` to require authentication:
 
 ```ts
-import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
 import { db } from '$lib/server/db';
-import { products } from '$lib/server/db/schema';
-import { CreateProductSchema } from '$lib/schemas/product';
 import { eq } from 'drizzle-orm';
+import type { RequestHandler } from './$types';
+import { products } from '$lib/server/db/schema';
+import { error, json } from '@sveltejs/kit';
+import { CreateProductSchema } from '$lib/schemas/product';
+import { z } from 'zod';
 
 // GET remains public (or make it private if you prefer)
-export const GET: RequestHandler = async () => {
-	const allProducts = await db.select().from(products);
+export const GET: RequestHandler = async ({ url }) => {
+	const status = url.searchParams.get('status');
+
+	const allProducts = status
+		? await db
+				.select()
+				.from(products)
+				.where(eq(products.status, status as 'available' | 'reserved' | 'sold'))
+		: await db.select().from(products);
+
 	return json(allProducts);
 };
 
 // POST requires authentication
 export const POST: RequestHandler = async ({ request, locals }) => {
-	// Check authentication
 	if (!locals.user) {
 		return error(401, 'Unauthorized');
 	}
@@ -591,7 +565,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (!parsed.success) {
 		return json(
-			{ message: 'Invalid request body', issues: parsed.error.flatten() },
+			{ message: 'Invalid request body', issues: z.treeifyError(parsed.error) },
 			{ status: 400 }
 		);
 	}
@@ -621,18 +595,19 @@ on your needs.
 
 ## Step 9 — Create an admin user
 
-With your dev server running, use curl or a REST client to create your first admin:
+For initial setup, you can create a user via the register page or Drizzle Studio.
+A register page is provided for convenience during development.
+
+Add `AUTH_SECRET` to your `.env` file:
 
 ```bash
-curl -X POST http://localhost:5173/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "your-secure-password"}'
+AUTH_SECRET=your-random-secret-here
 ```
 
-You should get:
+This secret is used to sign the auth cookies. Generate a strong one:
 
-```json
-{ "success": true, "userId": "some-random-id" }
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 ---
@@ -642,11 +617,14 @@ You should get:
 1. Visit `http://localhost:5173/admin` while logged out
    - You should be redirected to `/login`
 
-2. Log in with your credentials
-   - You should be redirected to `/admin`
-   - You should see your username in the header
+2. Register a new user at `/register`
+   - You should be redirected to `/login`
 
-3. Try creating a product via the API without authentication
+3. Log in with your credentials
+   - You should be redirected to `/admin`
+   - The auth cookie is set
+
+4. Try creating a product via the API without authentication
 
    ```bash
    curl -X POST http://localhost:5173/api/products \
@@ -656,15 +634,19 @@ You should get:
 
    - You should get a 401 Unauthorized
 
-4. Check Drizzle Studio to see your session:
+5. Try creating a product via the API with authentication
 
    ```bash
-   npm run db:studio
+   # Get the cookie from your browser dev tools and pass it:
+   curl -X POST http://localhost:5173/api/products \
+     -H "Content-Type: application/json" \
+     -H "Cookie: auth_token=<your-token>" \
+     -d '{"name": "Test", "brand": "Test", "price": 100}'
    ```
 
-   - You should see a row in the `sessions` table
+   - You should get a 201 Created
 
-5. Log out and verify the session is deleted from the database
+6. Log out via the admin UI and verify the cookie is cleared
 
 ---
 
@@ -672,13 +654,13 @@ You should get:
 
 ```
 src/
-├── app.d.ts                    ← Updated with Locals types
-├── hooks.server.ts             ← Session validation on every request
+├── app.d.ts                    ← Updated with Locals types (no session)
+├── hooks.server.ts             ← Resolves user from cookie
 ├── lib/
 │   ├── server/
-│   │   ├── auth.ts             ← Lucia setup + helper functions
+│   │   ├── auth.ts             ← HMAC-signed cookie auth + helpers
 │   │   └── db/
-│   │       ├── schema.ts       ✅ Phase 1 (users & sessions defined)
+│   │       ├── schema.ts       ✅ Phase 1 (users table only; sessions removed)
 │   │       ├── index.ts        ✅ Phase 1
 │   │       └── seed.ts         ✅ Phase 1
 │   └── schemas/
@@ -689,16 +671,14 @@ src/
 │   │   ├── auth/
 │   │   │   ├── login/
 │   │   │   │   └── +server.ts  ← POST login
-│   │   │   ├── logout/
-│   │   │   │   └── +server.ts  ← POST logout
-│   │   │   └── register/
-│   │   │       └── +server.ts  ← POST register
+│   │   │   └── logout/
+│   │   │       └── +server.ts  ← POST logout
 │   │   └── products/           ← Now protected
 │   │       └── ...
 │   │
 │   ├── admin/                  ← Protected routes
 │   │   ├── +layout.server.ts   ← Auth check
-│   │   ├── +layout.svelte      ← Admin shell with logout
+│   │   ├── +layout.svelte      ← Admin shell
 │   │   └── +page.svelte        ← Dashboard
 │   │
 │   └── login/
@@ -711,13 +691,12 @@ src/
 
 ## Phase 3 Summary
 
-| Component         | Purpose                                                    |
-| ----------------- | ---------------------------------------------------------- |
-| `lucia`           | Session management and cookie handling                     |
-| `@node-rs/argon2` | Secure Argon2id password hashing (native Node.js bindings) |
-| `hooks.server.ts` | Validates session on every request                         |
-| `locals.user`     | Access current user in any server route                    |
-| `locals.session`  | Access current session for logout                          |
+| Component               | Purpose                                                    |
+| ----------------------- | ---------------------------------------------------------- |
+| `@node-rs/argon2`       | Secure Argon2id password hashing (native Node.js bindings) |
+| `hooks.server.ts`       | Resolves current user from cookie on every request         |
+| `AUTH_SECRET` env var   | Signing key for auth tokens                                |
+| `locals.user`           | Access current user in any server route                    |
 
 ---
 
@@ -728,7 +707,7 @@ the protected API routes you just created to list, create, edit, and delete prod
 
 By now you understand:
 
-- How sessions work (cookie ↔ database ↔ validation)
+- How HMAC-signed cookies work (sign → cookie → verify → user)
 - How to protect routes (hooks + locals check)
 - How to hash passwords securely
-- How to create and destroy sessions on login/logout
+- How cookie-based auth eliminates the need for a sessions table

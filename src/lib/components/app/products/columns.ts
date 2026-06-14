@@ -10,7 +10,6 @@ export type FormBody = {
 	brand: string;
 	price: string;
 	status: ProductStatus;
-	imageUrl: string | null;
 	notes: string | null;
 };
 
@@ -22,7 +21,6 @@ export type Products = {
 	brand: string;
 	price: string;
 	status: ProductStatus;
-	imageUrl: string | null;
 	notes: string | null;
 	createdAt: Date;
 	updatedAt: Date;

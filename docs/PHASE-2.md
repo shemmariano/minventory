@@ -44,7 +44,6 @@ export const CreateProductSchema = z.object({
   brand: z.string().min(1, 'Brand is required').max(255),
   price: z.coerce.number().positive('Price must be greater than 0'),
   status: ProductStatusSchema.optional(),
-  imageUrl: z.string().url('Must be a valid URL').optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
 });
 
@@ -54,17 +53,12 @@ export const UpdateProductSchema = z.object({
   brand: z.string().min(1, 'Brand is required').max(255),
   price: z.coerce.number().positive('Price must be greater than 0'),
   status: ProductStatusSchema,
-  imageUrl: z.string().url('Must be a valid URL').optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
 });
-
-// PATCH /api/products/[id] — partial update (only changed fields)
-export const PatchProductSchema = UpdateProductSchema.partial();
 
 // TypeScript types inferred from schemas — use these in your functions
 export type CreateProductInput = z.infer<typeof CreateProductSchema>;
 export type UpdateProductInput = z.infer<typeof UpdateProductSchema>;
-export type PatchProductInput = z.infer<typeof PatchProductSchema>;
 ```
 
 **Why Zod?**
@@ -86,7 +80,7 @@ follows this exact shape:
 ```
 1. Parse the request       — what did the client send?
 2. Validate the input      — is it the right shape?
-3. Check existence         — does the resource exist? (for GET one, PUT, PATCH, DELETE)
+3. Check existence         — does the resource exist? (for PUT, DELETE)
 4. Do the DB operation     — read or write
 5. Return the response     — with the right status code
 ```
@@ -104,7 +98,7 @@ src/routes/api/
   products/
     +server.ts          ← GET all, POST create
     [id]/
-      +server.ts        ← GET one, PUT, PATCH, DELETE
+      +server.ts        ← PUT, DELETE
 ```
 
 The `[id]` folder is a dynamic route — SvelteKit automatically captures whatever
@@ -146,49 +140,7 @@ db.select().from(products)
 
 ---
 
-## Step 2 — GET one product
-
-Add this to the same `+server.ts` file, OR create `src/routes/api/products/[id]/+server.ts`:
-
-```ts
-import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { products } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
-
-export const GET: RequestHandler = async ({ params }) => {
-  const product = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, params.id))
-    .then(rows => rows[0]);
-
-  if (!product) return error(404, 'Product not found');
-
-  return json(product);
-};
-```
-
-**Test it:** Grab one of the UUIDs from your GET all response, then visit:
-```
-http://localhost:5173/api/products/paste-uuid-here
-```
-
-**The Drizzle query explained:**
-```ts
-db.select().from(products).where(eq(products.id, params.id))
-// translates to:
-// SELECT * FROM products WHERE id = 'some-uuid'
-```
-
-`eq()` is Drizzle's equals operator. You'll use it constantly.
-`.then(rows => rows[0])` grabs the first result — SELECT always returns an array,
-even when you expect one row.
-
----
-
-## Step 3 — POST create product
+## Step 2 — POST create product
 
 Now you need validation. This is where your Zod schema comes in.
 
@@ -201,7 +153,12 @@ import { db } from '$lib/server/db';
 import { products } from '$lib/server/db/schema';
 import { CreateProductSchema } from '$lib/schemas/product';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+  // Check authentication
+  if (!locals.user) {
+    return error(401, 'Unauthorized');
+  }
+
   // 1. Parse the request body — wrap in catch in case it's not valid JSON
   const body = await request.json().catch(() => null);
 
@@ -222,7 +179,6 @@ export const POST: RequestHandler = async ({ request }) => {
       brand: parsed.data.brand,
       price: String(parsed.data.price), // numeric column expects a string
       status: parsed.data.status ?? 'available',
-      imageUrl: parsed.data.imageUrl,
       notes: parsed.data.notes,
     })
     .returning()
@@ -254,7 +210,7 @@ Drizzle gives it to you as a string. So you pass it as a string too.
 
 ---
 
-## Step 4 — PUT update product
+## Step 3 — PUT update product
 
 In `src/routes/api/products/[id]/+server.ts`:
 
@@ -266,12 +222,19 @@ import { products } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { UpdateProductSchema } from '$lib/schemas/product';
 
-export const PUT: RequestHandler = async ({ params, request }) => {
+export const PUT: RequestHandler = async ({ params, request, locals }) => {
+  // Check authentication
+  if (!locals.user) {
+    return error(401, 'Unauthorized');
+  }
+
+  const { id } = params;
+
   // 1. Check the product exists first
   const existing = await db
     .select()
     .from(products)
-    .where(eq(products.id, params.id))
+    .where(eq(products.id, id))
     .then(rows => rows[0]);
 
   if (!existing) return error(404, 'Product not found');
@@ -294,11 +257,10 @@ export const PUT: RequestHandler = async ({ params, request }) => {
       brand: parsed.data.brand,
       price: String(parsed.data.price),
       status: parsed.data.status,
-      imageUrl: parsed.data.imageUrl,
       notes: parsed.data.notes,
       updatedAt: new Date(), // always update this manually
     })
-    .where(eq(products.id, params.id))
+    .where(eq(products.id, id))
     .returning()
     .then(rows => rows[0]);
 
@@ -313,66 +275,26 @@ You'd return a 200 with no data. Checking first lets you return a proper 404.
 
 ---
 
-## Step 5 — PATCH status update
+## Step 4 — DELETE product
 
 ```ts
-import { PatchProductSchema } from '$lib/schemas/product';
-
-export const PATCH: RequestHandler = async ({ params, request }) => {
-  const existing = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, params.id))
-    .then(rows => rows[0]);
-
-  if (!existing) return error(404, 'Product not found');
-
-  const body = await request.json().catch(() => null);
-  const parsed = PatchProductSchema.safeParse(body);
-  if (!parsed.success) {
-    return json(
-      { message: 'Invalid request body', issues: parsed.error.flatten() },
-      { status: 400 }
-    );
+export const DELETE: RequestHandler = async ({ params, locals }) => {
+  // Check authentication
+  if (!locals.user) {
+    return error(401, 'Unauthorized');
   }
 
-  const updated = await db
-    .update(products)
-    .set({
-      ...parsed.data,
-      // coerce price back to string if it was sent
-      ...(parsed.data.price && { price: String(parsed.data.price) }),
-      updatedAt: new Date(),
-    })
-    .where(eq(products.id, params.id))
-    .returning()
-    .then(rows => rows[0]);
+  const { id } = params;
 
-  return json(updated);
-};
-```
-
-**PATCH vs PUT:**
-PUT replaces the entire resource — you must send all fields.
-PATCH is a partial update — you only send what changed.
-That's why `PatchProductSchema` is just `UpdateProductSchema.partial()` —
-every field becomes optional.
-
----
-
-## Step 6 — DELETE product
-
-```ts
-export const DELETE: RequestHandler = async ({ params }) => {
   const existing = await db
     .select()
     .from(products)
-    .where(eq(products.id, params.id))
+    .where(eq(products.id, id))
     .then(rows => rows[0]);
 
   if (!existing) return error(404, 'Product not found');
 
-  await db.delete(products).where(eq(products.id, params.id));
+  await db.delete(products).where(eq(products.id, id));
 
   // 204 No Content — success, but no body to return
   return new Response(null, { status: 204 });
@@ -425,7 +347,7 @@ src/
         └── products/
             ├── +server.ts      ← GET all, POST
             └── [id]/
-                └── +server.ts  ← GET one, PUT, PATCH, DELETE
+                └── +server.ts  ← PUT, DELETE
 ```
 
 ---
@@ -436,9 +358,7 @@ src/
 |---|---|---|---|
 | `/api/products` | GET | Return all products | 200 |
 | `/api/products` | POST | Create a product | 201 |
-| `/api/products/[id]` | GET | Return one product | 200 |
 | `/api/products/[id]` | PUT | Replace a product | 200 |
-| `/api/products/[id]` | PATCH | Partially update | 200 |
 | `/api/products/[id]` | DELETE | Remove a product | 204 |
 
 ---

@@ -119,8 +119,8 @@
 </DataTable>
 
 <ProductDrawer
-	bind:open={openNewProductDrawer}
-	body={{ name: '', brand: '', price: '', status: 'available', notes: null, imageUrl: null }}
-	mode="add"
-	onsave={(body) => addProduct(body)}
-/>
+            bind:open={openNewProductDrawer}
+            body={{ name: '', brand: '', price: '', status: 'available', notes: null }}
+            mode="add"
+            onsave={(body) => addProduct(body)}
+        />

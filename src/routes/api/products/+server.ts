@@ -6,7 +6,6 @@ import { error, json } from '@sveltejs/kit';
 import { CreateProductSchema } from '$lib/schemas/product';
 import { z } from 'zod';
 
-// get all or by status
 export const GET: RequestHandler = async ({ url }) => {
 	const status = url.searchParams.get('status');
 
@@ -42,7 +41,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			brand: parsed.data.brand,
 			price: String(parsed.data.price),
 			status: parsed.data.status ?? 'available',
-			imageUrl: parsed.data.imageUrl,
 			notes: parsed.data.notes
 		})
 		.returning()

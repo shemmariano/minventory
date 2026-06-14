@@ -5,15 +5,10 @@
 		DropdownMenuContent,
 		DropdownMenuGroup,
 		DropdownMenuItem,
-		DropdownMenuRadioItem,
-		DropdownMenuSub,
-		DropdownMenuSubContent,
-		DropdownMenuSubTrigger,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
-	import DropdownMenuRadioGroup from '$lib/components/ui/dropdown-menu/dropdown-menu-radio-group.svelte';
 	import { Ellipsis, Pen } from '@lucide/svelte';
-	import type { FormBody, Products, ProductStatus } from './columns';
+	import type { FormBody, Products } from './columns';
 	import { invalidateAll } from '$app/navigation';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { toast } from 'svelte-sonner';
@@ -26,34 +21,9 @@
 	}
 
 	let { row }: Props = $props();
-	let isUpdating = $state<boolean>(false);
-	let currentStatus = $derived<ProductStatus>(row.status);
 
 	let openEditProductDrawer = $state<boolean>(false);
 	let openConfirmDeleteDialog = $state<boolean>(false);
-	async function changeProductStatus() {
-		isUpdating = true;
-
-		const res = await fetch(`/api/products/${row.id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				status: currentStatus
-			})
-		});
-
-		if (!res.ok) {
-			isUpdating = false;
-			toast.error('Failed to update status.');
-			return;
-		}
-
-		// const data = await res.json();
-		// console.log(data);
-		await invalidateAll();
-		toast.success('Status updated successfully.');
-		isUpdating = false;
-	}
 
 	async function handleUpdateProduct(id: string, body: FormBody, row: Products) {
 		openEditProductDrawer = false;
@@ -72,7 +42,7 @@
 		}
 
 		const res = await fetch(`/api/products/${id}`, {
-			method: 'PATCH',
+			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(updated)
 		});
@@ -107,41 +77,21 @@
 </script>
 
 <div class="flex gap-2">
-	<Button variant="ghost" size="icon" onclick={() => (openEditProductDrawer = true)}><Pen /></Button
-	>
-	{#if isUpdating}
-		<Button disabled variant="ghost" size="icon">
-			<Spinner />
-		</Button>
-	{:else}
-		<DropdownMenu>
-			<DropdownMenuTrigger>
-				{#snippet child({ props })}
-					<Button {...props} variant="ghost" size="icon"><Ellipsis /></Button>
-				{/snippet}
-			</DropdownMenuTrigger>
-			<DropdownMenuContent>
-				<DropdownMenuGroup>
-					<DropdownMenuSub>
-						<DropdownMenuSubTrigger>Status</DropdownMenuSubTrigger>
-						<DropdownMenuSubContent>
-							<DropdownMenuRadioGroup
-								bind:value={currentStatus}
-								onValueChange={changeProductStatus}
-							>
-								<DropdownMenuRadioItem value="available">Available</DropdownMenuRadioItem>
-								<DropdownMenuRadioItem value="reserved">Reserved</DropdownMenuRadioItem>
-								<DropdownMenuRadioItem value="sold">Sold</DropdownMenuRadioItem>
-							</DropdownMenuRadioGroup>
-						</DropdownMenuSubContent>
-					</DropdownMenuSub>
-					<DropdownMenuItem variant="destructive" onclick={() => (openConfirmDeleteDialog = true)}
-						>Delete</DropdownMenuItem
-					>
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
-	{/if}
+	<Button variant="ghost" size="icon" onclick={() => (openEditProductDrawer = true)}><Pen /></Button>
+	<DropdownMenu>
+		<DropdownMenuTrigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="ghost" size="icon"><Ellipsis /></Button>
+			{/snippet}
+		</DropdownMenuTrigger>
+		<DropdownMenuContent>
+			<DropdownMenuGroup>
+				<DropdownMenuItem variant="destructive" onclick={() => (openConfirmDeleteDialog = true)}
+					>Delete</DropdownMenuItem
+				>
+			</DropdownMenuGroup>
+		</DropdownMenuContent>
+	</DropdownMenu>
 </div>
 
 <ProductDrawer

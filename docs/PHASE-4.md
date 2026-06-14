@@ -381,7 +381,6 @@ Create `src/lib/components/app/products/CreateProductDialog.svelte`:
   let brand = $state('');
   let price = $state('');
   let status = $state<'available' | 'reserved' | 'sold'>('available');
-  let imageUrl = $state('');
   let notes = $state('');
   let loading = $state(false);
   let errors = $state<Record<string, string>>({});
@@ -391,7 +390,6 @@ Create `src/lib/components/app/products/CreateProductDialog.svelte`:
     brand = '';
     price = '';
     status = 'available';
-    imageUrl = '';
     notes = '';
     errors = {};
   }
@@ -408,7 +406,6 @@ Create `src/lib/components/app/products/CreateProductDialog.svelte`:
         brand,
         price: parseFloat(price),
         status,
-        imageUrl: imageUrl || null,
         notes: notes || null
       })
     });
@@ -477,12 +474,6 @@ Create `src/lib/components/app/products/CreateProductDialog.svelte`:
       </div>
 
       <div class="space-y-1">
-        <Label for="imageUrl">Image URL</Label>
-        <Input id="imageUrl" type="url" bind:value={imageUrl} placeholder="https://..." />
-        {#if errors.imageUrl}<p class="text-sm text-destructive">{errors.imageUrl}</p>{/if}
-      </div>
-
-      <div class="space-y-1">
         <Label for="notes">Notes</Label>
         <Textarea id="notes" bind:value={notes} placeholder="Size, condition, source..." rows={3} />
       </div>
@@ -539,7 +530,6 @@ The edit dialog is nearly identical to create, but:
   let brand = $state('');
   let price = $state('');
   let status = $state<'available' | 'reserved' | 'sold'>('available');
-  let imageUrl = $state('');
   let notes = $state('');
   let loading = $state(false);
   let errors = $state<Record<string, string>>({});
@@ -551,7 +541,6 @@ The edit dialog is nearly identical to create, but:
       brand = product.brand;
       price = product.price;
       status = product.status;
-      imageUrl = product.imageUrl ?? '';
       notes = product.notes ?? '';
       errors = {};
     }
@@ -570,7 +559,6 @@ The edit dialog is nearly identical to create, but:
         brand,
         price: parseFloat(price),
         status,
-        imageUrl: imageUrl || null,
         notes: notes || null
       })
     });
@@ -601,7 +589,7 @@ The edit dialog is nearly identical to create, but:
 
     <form onsubmit|preventDefault={handleSubmit} class="space-y-4">
       <!-- Same fields as CreateProductDialog -->
-      <!-- name, brand, price, status, imageUrl, notes -->
+      <!-- name, brand, price, status, notes -->
       <!-- ... -->
 
       <DialogFooter>
@@ -849,9 +837,5 @@ src/lib/components/ui/
 
 ## You're ready for Phase 5
 
-Phase 5 will add the audit log — every create, update, and delete action writes
-a row to the `logs` table. You'll build a Logs page that shows the full history
-of changes with timestamps and before/after snapshots.
-
-The `logs` table is already in your schema. Phase 5 is about writing to it
-(in your API routes) and reading from it (in a new admin page).
+Phase 5 will add dashboard statistics — total items, items by status, revenue summaries —
+using data already fetched from the products table. No new tables needed.

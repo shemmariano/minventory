@@ -1,29 +1,26 @@
 # Minventory
 
-A lightweight inventory management system modeled from my nanay's small clothing resale operations. Track each items, manage product status, and give customers a clean page to browse what's available.
+A lightweight, internal inventory management system modeled from my nanay's small clothing resale operations. Track items, manage product status, and keep everything organized behind a simple login.
 
 ## Core Modules
+
 ### Inventory Management
-Full CRUD operations for each product catalog. Actions include adding new items, editing details, and removing listings when needed.
+Full CRUD operations for the product catalog. Add new items, edit details, and remove listings when needed.
 
 ### Product Status Tracking
-Each item carries a status tag to reflect where it is in the sales pipeline. Supported statuses include available, reserved, and sold. Additional metadata like price, brand, and product image are tracked per item.
+Each item carries a status tag to reflect where it is in the sales pipeline. Supported statuses: `available`, `reserved`, and `sold`. Tracks price, brand, and notes per item.
 
 ### Dashboard
 Quick-glance overview and statistics of the inventory.
-
-### Customer View Page
-A clean, public-facing page where potential buyers can browse available listings. Displays product images, brand, price, and availability.
 
 ## Tech Stack
 - **Language**: Typescript
 - **Framework**: SvelteKit (fullstack meta framework)
 - **Styling**: TailwindCSS, shadcn-svelte
+- **Database**: PostgreSQL (Neon) via Drizzle ORM
 
 ## Roadmap
-- Admin authentication
-- CRUD operations
-- Image upload
-- Logs
-- Product public viewing
-- File export (CSV/XLS)
+- [x] Admin authentication
+- [x] CRUD operations
+- [ ] Dashboard statistics
+- [ ] Data export (CSV/XLS)

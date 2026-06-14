@@ -71,7 +71,7 @@ You'll see output like:
 ```
 Reading config file 'drizzle.config.ts'
 1 tables
-products 8 columns ...
+products 6 columns ...
 ✓ Your SQL migration file ➜ drizzle/0000_initial_schema.sql
 ```
 
@@ -107,7 +107,7 @@ npx drizzle-kit studio
 ```
 
 Open the URL it gives you (usually `https://local.drizzle.studio`).
-You should see your 4 empty tables: `products`, `users`, `sessions`, `logs`.
+You should see your 3 empty tables: `products`, `users`, `sessions`.
 
 ---
 
@@ -163,7 +163,6 @@ Your Neon DB (cloud Postgres)
   └── products table   (5 sample rows)
   └── users table      (empty — Phase 3)
   └── sessions table   (empty — Phase 3)
-  └── logs table       (empty — Phase 7)
 
 Your codebase
   └── schema.ts        (source of truth for table shapes)

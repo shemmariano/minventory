@@ -4,7 +4,6 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import { goto } from '$app/navigation';
 	import LogoBrand from '$lib/components/app/LogoBrand.svelte';
 	let { form } = $props();
 
@@ -12,9 +11,6 @@
 </script>
 
 <div class="flex h-screen w-full flex-col items-center justify-center gap-8">
-	<!-- <div class="prose dark:prose-invert">
-		<h2>Login</h2>
-	</div> -->
 	<LogoBrand width="48" height="48" textColor="text-primary dark:text-primary" />
 	<form
 		method="POST"
@@ -63,10 +59,4 @@
 			</Button>
 		</div>
 	</form>
-	<Button variant="ghost" onclick={() => goto('/')}>Home Page</Button>
-	<!-- <span class="prose dark:prose-invert"
-		>No account yet? <a href="/register" class="text-accent-foreground dark:text-accent-foreground"
-			>Register</a
-		></span
-	> -->
 </div>

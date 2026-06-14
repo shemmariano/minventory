@@ -1,72 +1,59 @@
-import { Lucia } from 'lucia';
-import { dev } from '$app/environment';
-import { db } from './db';
-import { sessions, users } from './db/schema';
-import { DrizzlePostgreSQLAdapter } from '@lucia-auth/adapter-drizzle';
-
-import { error, type RequestEvent } from '@sveltejs/kit';
 import { hash, verify } from '@node-rs/argon2';
-import { generateIdFromEntropySize } from 'lucia';
+import { createHmac } from 'node:crypto';
+import { db } from './db';
+import { users } from './db/schema';
 import { eq } from 'drizzle-orm';
+import { error, type RequestEvent } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 
-const adapter = new DrizzlePostgreSQLAdapter(db, sessions, users);
+const COOKIE_NAME = 'auth_token';
 
-export const lucia = new Lucia(adapter, {
-	sessionCookie: {
-		attributes: {
-			secure: !dev
-		}
-	},
-	getUserAttributes: (attributes) => {
-		return {
-			username: attributes.username
-		};
-	}
-});
-
-declare module 'lucia' {
-	interface Register {
-		Lucia: typeof lucia;
-		DatabaseUserAttributes: {
-			username: string;
-		};
-	}
+function getSecret(): string {
+	return env.AUTH_SECRET || 'dev-secret-change-in-production';
 }
 
-// Create new user with hashed password. Returns user ID on success
+function signToken(userId: string): string {
+	const secret = getSecret();
+	const sig = createHmac('sha256', secret).update(userId).digest('hex');
+	return `${userId}.${sig}`;
+}
+
+function verifyToken(token: string): string | null {
+	const [userId, sig] = token.split('.');
+	if (!userId || !sig) return null;
+	const secret = getSecret();
+	const expected = createHmac('sha256', secret).update(userId).digest('hex');
+	return sig === expected ? userId : null;
+}
+
 export async function createUser(username: string, password: string): Promise<string> {
 	const existing = await db
 		.select()
 		.from(users)
 		.where(eq(users.username, username))
 		.then((rows) => rows[0]);
-
 	if (existing) {
-		throw new Error('Username already taken.');
+		throw new Error('Username already taken');
 	}
 
-	// Hash password using Argon2id
 	const passwordHash = await hash(password, {
-		memoryCost: 19456, // 19MB memory
-		timeCost: 2, // 2 iterations
+		memoryCost: 19456,
+		timeCost: 2,
 		outputLen: 32,
 		parallelism: 1
 	});
 
-	// Generate random user ID
-	const userId = generateIdFromEntropySize(15);
+	const result = await db
+		.insert(users)
+		.values({
+			username,
+			passwordHash
+		})
+		.returning({ id: users.id });
 
-	// Insert new user to db
-	await db.insert(users).values({
-		id: userId,
-		username,
-		passwordHash
-	});
-
-	return userId;
+	return result[0].id;
 }
 
-// returns user ID if valid, null if invalid
 export async function validateCredentials(
 	username: string,
 	password: string
@@ -76,7 +63,6 @@ export async function validateCredentials(
 		.from(users)
 		.where(eq(users.username, username))
 		.then((rows) => rows[0]);
-
 	if (!user) return null;
 
 	const isValid = await verify(user.passwordHash, password, {
@@ -85,38 +71,39 @@ export async function validateCredentials(
 		outputLen: 32,
 		parallelism: 1
 	});
-
 	if (!isValid) return null;
 
 	return user.id;
 }
 
-// creates session and set session cookie, after successful login
 export async function createSession(event: RequestEvent, userId: string): Promise<void> {
-	const session = await lucia.createSession(userId, {});
-	const sessionCookie = lucia.createSessionCookie(session.id);
-
-	event.cookies.set(sessionCookie.name, sessionCookie.value, {
-		path: '.',
-		...sessionCookie.attributes
+	const token = signToken(userId);
+	event.cookies.set(COOKIE_NAME, token, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		secure: !event.url.protocol.includes('http:') && event.url.hostname !== 'localhost',
+		maxAge: 60 * 60 * 24 * 7
 	});
 }
 
-// invalidate session and clear cookie, on logout
 export async function invalidateSession(event: RequestEvent): Promise<void> {
-	const sessionId = event.locals.session?.id;
-	if (sessionId) {
-		await lucia.invalidateSession(sessionId);
-	}
-
-	const blankCookie = lucia.createBlankSessionCookie();
-	event.cookies.set(blankCookie.name, blankCookie.value, {
-		path: '.',
-		...blankCookie.attributes
-	});
+	event.cookies.delete(COOKIE_NAME, { path: '/' });
 }
 
-// protected routes
+export async function getUserFromSession(event: RequestEvent) {
+	const token = event.cookies.get(COOKIE_NAME);
+	if (!token) return null;
+	const userId = verifyToken(token);
+	if (!userId) return null;
+	const user = await db
+		.select()
+		.from(users)
+		.where(eq(users.id, userId))
+		.then((rows) => rows[0]);
+	return user ? { id: user.id, username: user.username } : null;
+}
+
 export function requireAuth(event: RequestEvent): void {
 	if (!event.locals.user) {
 		throw error(401, 'Unauthorized');

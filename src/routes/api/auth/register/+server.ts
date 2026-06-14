@@ -1,15 +1,16 @@
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { createUser } from '$lib/server/auth';
 import { z } from 'zod';
+import { json, type RequestHandler } from '@sveltejs/kit';
+import { createUser } from '$lib/server/auth';
+import { error } from 'console';
 
 const RegisterSchema = z.object({
-	username: z.string().min(3, 'Username must be at least 3 characters').max(50),
-	password: z.string().min(8, 'Password must be at least 8 characters')
+	username: z.string().min(1, 'Username is required'),
+	password: z.string().min(1, 'Password is required')
 });
 
-export const POST: RequestHandler = async ({ request }) => {
-	const body = await request.json().catch(() => null);
+export const POST: RequestHandler = async (event) => {
+	// get request body and parse
+	const body = await event.request.json().catch(() => null);
 	const parsed = RegisterSchema.safeParse(body);
 
 	if (!parsed.success) {
@@ -18,11 +19,16 @@ export const POST: RequestHandler = async ({ request }) => {
 			{ status: 400 }
 		);
 	}
+
+	const { username, password } = parsed.data;
+
 	try {
-		const userId = await createUser(parsed.data.username, parsed.data.password);
-		return json({ success: true, userId }, { status: 201 });
+		const userId = await createUser(username, password);
+		return json({ success: true, userId });
 	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Unknown error';
-		return json({ message }, { status: 400 });
+		if (error instanceof Error && error.message === 'Username already taken') {
+			return json({ message: error.message }, { status: 409 });
+		}
+		throw error;
 	}
 };

@@ -6,6 +6,5 @@ import { desc } from 'drizzle-orm';
 export const load: PageServerLoad = async () => {
 	const allProducts = await db.select().from(products).orderBy(desc(products.createdAt));
 
-	console.log(allProducts);
 	return { products: allProducts };
 };
