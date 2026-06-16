@@ -1,9 +1,9 @@
 import { db } from '$lib/server/db';
 import { products } from '$lib/server/db/schema';
-import { sql } from 'drizzle-orm';
+import { sql, desc } from 'drizzle-orm';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
 	const stats = await db
 		.select({
 			total: sql<number>`count(*)`,
@@ -15,5 +15,22 @@ export const load: PageServerLoad = async () => {
 		.from(products)
 		.then((rows) => rows[0]);
 
-	return { stats };
+	const recentProducts = await db
+		.select({
+			id: products.id,
+			name: products.name,
+			brand: products.brand,
+			price: products.price,
+			status: products.status,
+			createdAt: products.createdAt
+		})
+		.from(products)
+		.orderBy(desc(products.createdAt))
+		.limit(10);
+
+	return {
+		stats,
+		recentProducts,
+		user: locals.user
+	};
 };
